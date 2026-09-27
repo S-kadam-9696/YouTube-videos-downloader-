@@ -1,0 +1,11 @@
+{
+  "video_save_path": "~/Videos",
+  "audio_save_path": "~/Music",
+  "video_format": "bestvideo+bestaudio/best",
+  "video_container": "mp4",
+  "audio_format": "mp3",
+  "audio_quality": "320",
+  "max_results": 15,
+  "parallel_downloads": 2,
+  "embed_metadata": true
+}
