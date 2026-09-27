@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YT-DLP — YouTube Downloader</title>
+  <meta name="description" content="Search and download YouTube videos or audio with the powerful yt-dlp engine." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+
+  <!-- Google AdSense -->
+  <script async
+    src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3776846934936900"
+    crossorigin="anonymous"></script>
+</head>
+
+<body>
+
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <div class="logo-icon">▶</div>
+        <span class="logo-text">YT-DLP</span>
+        <span class="logo-badge">Downloader</span>
+      </div>
+      <nav class="nav-tabs">
+        <button class="nav-tab active" id="tab-search" onclick="showTab('search')">Search</button>
+        <button class="nav-tab" id="tab-downloads" onclick="showTab('downloads')">
+          Downloads
+          <span class="badge" id="active-badge" style="display:none">0</span>
+        </button>
+        <button class="nav-tab" id="tab-settings" onclick="showTab('settings')">Settings</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="main">
+
+    <!-- ── SEARCH TAB ── -->
+    <section class="tab-panel active" id="panel-search">
+      <div class="search-hero">
+        <p class="hero-eyebrow">Powered by yt-dlp</p>
+        <h1 class="hero-title">Download <em>Anything</em><br>from YouTube</h1>
+        <p class="hero-sub">Search, preview, and save videos or extract audio in your preferred format. No limits.</p>
+        <form class="search-form" id="search-form" onsubmit="handleSearch(event)">
+          <div class="search-input-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="search-input" class="search-input" placeholder="Search YouTube or paste a URL…"
+              autocomplete="off" spellcheck="false" />
+            <button type="submit" class="search-btn" id="search-btn">
+              <span id="search-btn-text">Search</span>
+              <span id="search-spinner" class="spinner" style="display:none"></span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="adsense-slot" aria-label="Advertisement">
+        <ins class="adsbygoogle"
+             style="display:block"
+             data-ad-client="ca-pub-3776846934936900"
+             data-ad-slot="8855628320"
+             data-ad-format="auto"
+             data-full-width-responsive="true"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      </div>
+      <div id="search-error" class="alert alert-error" style="display:none"></div>
+
+      <div id="results-grid" class="results-grid"></div>
+
+      <div class="adsense-slot" aria-label="Advertisement">
+        <ins class="adsbygoogle"
+             style="display:block"
+             data-ad-client="ca-pub-3776846934936900"
+             data-ad-slot="8855628320"
+             data-ad-format="auto"
+             data-full-width-responsive="true"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      </div>
+      <div id="empty-state" class="empty-state">
+        <div class="empty-icon">🎬</div>
+        <p>Search for videos to get started</p>
+      </div>
+    </section>
+
+    <!-- ── DOWNLOADS TAB ── -->
+    <section class="tab-panel" id="panel-downloads">
+      <div class="section-header">
+        <h2 class="section-title">Active Downloads</h2>
+        <button class="btn-outline" onclick="clearFinishedDownloads()">Clear Finished</button>
+      </div>
+      <div id="downloads-list" class="downloads-list">
+        <div class="empty-state">
+          <div class="empty-icon">📥</div>
+          <p>No downloads yet</p>
+        </div>
+      </div>
+
+      <div class="adsense-slot" aria-label="Advertisement">
+        <ins class="adsbygoogle"
+             style="display:block"
+             data-ad-client="ca-pub-3776846934936900"
+             data-ad-slot="8855628320"
+             data-ad-format="auto"
+             data-full-width-responsive="true"></ins>
+        <script>
+          (adsbygoogle = window.adsbygoogle || []).push({});
+        </script>
+      </div>
+    </section>
+
+    <!-- ── SETTINGS TAB ── -->
+    <section class="tab-panel" id="panel-settings">
+      <div class="section-header">
+        <h2 class="section-title">Settings</h2>
+        <button class="btn-primary" onclick="saveSettings()">Save Changes</button>
+      </div>
+      <div id="settings-alert" class="alert" style="display:none"></div>
+
+      <div class="settings-grid">
+        <!-- Paths -->
+        <div class="settings-card">
+          <h3 class="settings-card-title">📁 Save Locations</h3>
+          <label class="field-label">Video Save Path</label>
+          <input type="text" id="cfg-video-path" class="field-input" placeholder="./downloads/video" />
+          <label class="field-label">Audio Save Path</label>
+          <input type="text" id="cfg-audio-path" class="field-input" placeholder="./downloads/audio" />
+        </div>
+
+        <!-- Video -->
+        <div class="settings-card">
+          <h3 class="settings-card-title">🎥 Video Settings</h3>
+          <label class="field-label">Format</label>
+          <select id="cfg-video-format" class="field-input">
+            <option value="bestvideo+bestaudio/best">Best Quality (bestvideo+bestaudio)</option>
+            <option value="bestvideo[height<=1080]+bestaudio/best">Max 1080p</option>
+            <option value="bestvideo[height<=720]+bestaudio/best">Max 720p</option>
+            <option value="bestvideo[height<=480]+bestaudio/best">Max 480p</option>
+            <option value="best">Best single file</option>
+          </select>
+          <label class="field-label">Container</label>
+          <select id="cfg-video-container" class="field-input">
+            <option value="mp4">MP4</option>
+            <option value="mkv">MKV</option>
+            <option value="webm">WebM</option>
+          </select>
+        </div>
