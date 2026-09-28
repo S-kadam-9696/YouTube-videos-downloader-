@@ -7,7 +7,6 @@ venv/
 README.md
 DEPLOY.md
 screenshots/
-app/static/
 downloads/
 .DS_Store
 *.pyo
