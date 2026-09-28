@@ -6,9 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
 
-# Allow running from project root or app directory
 APP_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(APP_DIR))
 
@@ -19,12 +17,9 @@ from downloader import start_download, get_status, get_all_statuses
 
 
 app = FastAPI(
-    title="YT-DLP Web App",
-    version="1.0.0",
+    title="YouTube Videos Downloader",
+    version="2.0.0",
 )
-
-
-# ── CORS ─────────────────────────────────────────────────────────────
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,47 +29,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# ── Static files ─────────────────────────────────────────────────────
-
 STATIC_DIR = APP_DIR / "static"
 
-if STATIC_DIR.exists():
-    app.mount(
-        "/static",
-        StaticFiles(directory=str(STATIC_DIR)),
-        name="static",
-    )
-
-
-# ── Root ─────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
     index = STATIC_DIR / "index.html"
 
     if not index.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="index.html not found",
-        )
+        raise HTTPException(status_code=404, detail="index.html not found")
 
     return HTMLResponse(
         content=index.read_text(encoding="utf-8")
     )
 
 
-# ── Health check ────────────────────────────────────────────────────
-
 @app.get("/health")
 async def health():
     return {
         "status": "ok",
-        "service": "yt-dlp-web-app",
+        "service": "youtube-videos-downloader",
     }
 
-
-# ── Search ───────────────────────────────────────────────────────────
 
 @app.post("/api/search")
 async def api_search(req: SearchRequest):
@@ -86,9 +62,8 @@ async def api_search(req: SearchRequest):
             detail="Search query cannot be empty",
         )
 
-    cfg = load_config()
-
     try:
+        cfg = load_config()
         max_results = int(cfg.get("max_results", 10))
 
         results = await asyncio.to_thread(
@@ -99,14 +74,12 @@ async def api_search(req: SearchRequest):
 
         return results
 
-    except Exception as e:
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=str(e),
+            detail=str(exc),
         )
 
-
-# ── Start download ──────────────────────────────────────────────────
 
 @app.post("/api/download")
 async def api_download(req: DownloadRequest):
@@ -116,19 +89,19 @@ async def api_download(req: DownloadRequest):
             detail="mode must be 'video' or 'audio'",
         )
 
-    if not req.url or not req.url.strip():
+    url = req.url.strip()
+
+    if not url:
         raise HTTPException(
             status_code=400,
             detail="URL cannot be empty",
         )
 
-    cfg = load_config()
-
     try:
         download_id = start_download(
-            req.url.strip(),
+            url,
             req.mode,
-            cfg,
+            load_config(),
         )
 
         return {
@@ -137,14 +110,12 @@ async def api_download(req: DownloadRequest):
             "id": download_id,
         }
 
-    except Exception as e:
+    except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=str(e),
+            detail=str(exc),
         )
 
-
-# ── Single download status ──────────────────────────────────────────
 
 @app.get("/api/status/{download_id}")
 async def api_status(download_id: str):
@@ -159,14 +130,10 @@ async def api_status(download_id: str):
     return status
 
 
-# ── All download statuses ───────────────────────────────────────────
-
 @app.get("/api/status")
 async def api_all_statuses():
     return get_all_statuses()
 
-
-# ── Progress SSE ────────────────────────────────────────────────────
 
 @app.get("/api/progress/{download_id}")
 async def api_progress_sse(download_id: str):
@@ -175,19 +142,15 @@ async def api_progress_sse(download_id: str):
         while True:
             status = get_status(download_id)
 
-            data = json.dumps(status)
+            yield f"data: {json.dumps(status)}\n\n"
 
-            yield f"data: {data}\n\n"
-
-            current_status = status.get("status")
-
-            if current_status in (
+            if status.get("status") in {
                 "finished",
                 "completed",
                 "error",
                 "failed",
                 "not_found",
-            ):
+            }:
                 break
 
             await asyncio.sleep(0.8)
@@ -203,25 +166,15 @@ async def api_progress_sse(download_id: str):
     )
 
 
-# ── Configuration ───────────────────────────────────────────────────
-
 @app.get("/api/config")
 async def api_get_config():
     return load_config()
 
 
 @app.post("/api/config")
-async def api_update_config(
-    cfg: ConfigUpdateRequest,
-):
+async def api_update_config(cfg: ConfigUpdateRequest):
     current = load_config()
-
-    patch = cfg.model_dump(
-        exclude_none=True
-    )
-
-    current.update(patch)
-
+    current.update(cfg.model_dump(exclude_none=True))
     save_config(current)
 
     return {
@@ -230,16 +183,11 @@ async def api_update_config(
     }
 
 
-# ── Downloaded file ─────────────────────────────────────────────────
-
 @app.get("/api/file/{download_id}")
 async def api_download_file(download_id: str):
     status = get_status(download_id)
 
-    if status.get("status") not in (
-        "finished",
-        "completed",
-    ):
+    if status.get("status") not in {"finished", "completed"}:
         raise HTTPException(
             status_code=404,
             detail="Download is not finished",
@@ -268,4 +216,7 @@ async def api_download_file(download_id: str):
         path=str(file_path),
         filename=file_path.name,
         media_type="application/octet-stream",
-    )
+        headers={
+            "Cache-Control": "no-store",
+        },
+        )
