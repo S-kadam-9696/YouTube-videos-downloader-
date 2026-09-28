@@ -31,6 +31,8 @@ RUN cd /opt/bgutil-ytdlp-pot-provider/server \
 
 COPY . .
 
+RUN mkdir -p /root/.config/yt-dlp && cp /app/yt-dlp.conf /root/.config/yt-dlp/config
+
 EXPOSE 10000
 
 CMD ["sh", "-c", "node /opt/bgutil-ytdlp-pot-provider/server/build/main.js --host 127.0.0.1 & uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]
