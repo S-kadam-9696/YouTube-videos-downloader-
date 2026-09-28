@@ -1,21 +1,19 @@
-"""Background yt-dlp downloads with progress tracking."""
+"""Temporary background YouTube downloads."""
 
 import re
 import threading
 import uuid
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from yt_dlp import YoutubeDL
 
 
-# Shared download status store
-download_status: Dict[str, Dict[str, Any]] = {}
+download_status: dict[str, dict[str, Any]] = {}
 _lock = threading.RLock()
 
 
 def _clean_title(title: str) -> str:
-    """Clean title of common metadata tags."""
     if not title:
         return "video"
 
@@ -52,17 +50,14 @@ def _clean_title(title: str) -> str:
 
 
 def _update_status(download_id: str, **fields: Any) -> None:
-    """Thread-safe status update."""
     with _lock:
         if download_id in download_status:
             download_status[download_id].update(fields)
 
 
-def _safe_path(value: str, default: str) -> Path:
-    """Safely expand and resolve a path."""
+def _safe_path(value: str | None, default: str) -> Path:
     try:
-        path = Path((value or default).strip()).expanduser()
-        return path.resolve()
+        return Path((value or default).strip()).expanduser().resolve()
     except Exception:
         return Path(default).resolve()
 
@@ -71,36 +66,28 @@ def _find_downloaded_file(
     folder: Path,
     prepared_filename: str,
     mode: str,
-    audio_format: str = "mp3",
-    video_container: str = "mp4",
+    audio_format: str,
+    video_container: str,
 ) -> Path | None:
-    """Find the actual final downloaded file."""
 
     prepared = Path(prepared_filename)
 
-    # First check the exact prepared filename.
     if prepared.exists():
         return prepared
 
-    # Audio post-processing changes extension.
     if mode == "audio":
-        audio_file = prepared.with_suffix(f".{audio_format}")
+        candidate = prepared.with_suffix(f".{audio_format}")
+        if candidate.exists():
+            return candidate
 
-        if audio_file.exists():
-            return audio_file
-
-    # Video merging can change the final extension.
     if mode == "video":
-        video_file = prepared.with_suffix(f".{video_container}")
+        candidate = prepared.with_suffix(f".{video_container}")
+        if candidate.exists():
+            return candidate
 
-        if video_file.exists():
-            return video_file
-
-    # Last fallback: newest file in the download folder.
     try:
         files = [
-            p
-            for p in folder.iterdir()
+            p for p in folder.iterdir()
             if p.is_file()
         ]
 
@@ -109,32 +96,30 @@ def _find_downloaded_file(
                 files,
                 key=lambda p: p.stat().st_mtime,
             )
+
     except Exception:
         pass
 
     return None
 
 
-def _progress_hook(download_id: str) -> callable:
-    """Create a progress hook for yt-dlp."""
+def _progress_hook(download_id: str):
+    def hook(data: dict[str, Any]) -> None:
 
-    def hook(d: Dict[str, Any]) -> None:
-        status = d.get("status")
-
-        if status == "downloading":
-            percent = d.get("_percent_str", "0%")
-            speed = d.get("_speed_str", "")
-            eta = d.get("_eta")
-
+        if data.get("status") == "downloading":
             _update_status(
                 download_id,
                 status="downloading",
-                percent=str(percent).strip(),
-                speed=str(speed).strip(),
-                eta=eta,
+                percent=str(
+                    data.get("_percent_str", "0%")
+                ).strip(),
+                speed=str(
+                    data.get("_speed_str", "")
+                ).strip(),
+                eta=data.get("_eta"),
             )
 
-        elif status == "finished":
+        elif data.get("status") == "finished":
             _update_status(
                 download_id,
                 status="processing",
@@ -148,63 +133,59 @@ def _download_worker(
     download_id: str,
     url: str,
     mode: str,
-    config: Dict[str, Any],
+    config: dict[str, Any],
 ) -> None:
-    """Background worker thread for downloads."""
+
+    folder: Path | None = None
+    final_file: Path | None = None
 
     try:
         _update_status(
             download_id,
             status="downloading",
+            percent="0%",
         )
 
+        # Render temporary storage.
+        # Files are removed after the download response.
         if mode == "audio":
-            save_path_key = "audio_save_path"
-            default_folder = "./downloads/audio"
+            folder = Path("/tmp/youtube-downloader/audio")
+            audio_format = str(
+                config.get("audio_format", "mp3")
+            )
+            video_container = "mp4"
         else:
-            save_path_key = "video_save_path"
-            default_folder = "./downloads/video"
-
-        folder = _safe_path(
-            config.get(save_path_key),
-            default_folder,
-        )
+            folder = Path("/tmp/youtube-downloader/video")
+            audio_format = "mp3"
+            video_container = str(
+                config.get("video_container", "mp4")
+            )
 
         folder.mkdir(
             parents=True,
             exist_ok=True,
         )
 
-        audio_format = str(
-            config.get("audio_format", "mp3")
-        )
-
-        video_container = str(
-            config.get("video_container", "mp4")
-        )
-
-        # Use cleaned title for the filename.
         output_template = (
             str(folder)
             + "/%(title)s [%(id)s].%(ext)s"
         )
 
-        ydl_opts: Dict[str, Any] = {
+        options: dict[str, Any] = {
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
+            "outtmpl": output_template,
             "progress_hooks": [
                 _progress_hook(download_id)
             ],
-            "outtmpl": output_template,
             "restrictfilenames": False,
             "writethumbnail": False,
         }
 
         if mode == "audio":
-            ydl_opts["format"] = "bestaudio/best"
-
-            ydl_opts["postprocessors"] = [
+            options["format"] = "bestaudio/best"
+            options["postprocessors"] = [
                 {
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": audio_format,
@@ -218,31 +199,26 @@ def _download_worker(
             ]
 
         else:
-            ydl_opts["format"] = config.get(
+            options["format"] = config.get(
                 "video_format",
                 "bestvideo+bestaudio/best",
             )
+            options["merge_output_format"] = video_container
 
-            ydl_opts["merge_output_format"] = (
-                video_container
-            )
-
-        with YoutubeDL(ydl_opts) as ydl:
+        with YoutubeDL(options) as ydl:
             info = ydl.extract_info(
                 url,
                 download=True,
             )
 
-            prepared_filename = ydl.prepare_filename(
-                info
-            )
+            prepared_filename = ydl.prepare_filename(info)
 
         final_file = _find_downloaded_file(
-            folder=folder,
-            prepared_filename=prepared_filename,
-            mode=mode,
-            audio_format=audio_format,
-            video_container=video_container,
+            folder,
+            prepared_filename,
+            mode,
+            audio_format,
+            video_container,
         )
 
         if final_file is None:
@@ -270,27 +246,26 @@ def _download_worker(
             file_size=final_file.stat().st_size,
         )
 
-    except Exception as err:
+    except Exception as exc:
         _update_status(
             download_id,
             status="error",
-            error=str(err),
+            error=str(exc),
         )
 
 
 def start_download(
     url: str,
     mode: str,
-    config: Dict[str, Any],
+    config: dict[str, Any],
 ) -> str:
-    """Start a background download."""
 
-    if mode not in ("video", "audio"):
+    if mode not in {"video", "audio"}:
         raise ValueError(
             "mode must be 'video' or 'audio'"
         )
 
-    if not url or not url.strip():
+    if not url.strip():
         raise ValueError(
             "URL cannot be empty"
         )
@@ -326,15 +301,9 @@ def start_download(
     return download_id
 
 
-def get_status(
-    download_id: str,
-) -> Dict[str, Any]:
-    """Get status of a download."""
-
+def get_status(download_id: str):
     with _lock:
-        status = download_status.get(
-            download_id
-        )
+        status = download_status.get(download_id)
 
         if status:
             return dict(status)
@@ -345,9 +314,7 @@ def get_status(
         }
 
 
-def get_all_statuses() -> Dict[str, Dict[str, Any]]:
-    """Get status of all downloads."""
-
+def get_all_statuses():
     with _lock:
         return {
             key: dict(value)
