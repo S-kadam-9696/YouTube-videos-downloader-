@@ -636,5 +636,132 @@ function renderDownloads(){
           Download File
         </a>`;
     }
+    else if(status==="error"||status==="failed"){
+      action=`
+        <div class="download-status" style="color:#ff7777">
+          ${escapeHtml(item.error||"Download failed")}
+        </div>`;
+    }
 
+    return `
+      <div class="download-card">
+        <div class="download-top">
+          <div>
+            <div class="download-title">
+              ${escapeHtml(item.title||"Download")}
+            </div>
+            <div class="download-status">
+              ${escapeHtml(status)} • ${escapeHtml(item.mode||"")}
+            </div>
+          </div>
+          <div>${Math.round(percent)}%</div>
+        </div>
+
+        <div class="progress">
+          <div class="progress-bar" style="width:${percent}%"></div>
+        </div>
+
+        ${action}
+      </div>`;
+  }).join("");
+}
+
+function updateBadge(){
+  const badge=document.getElementById("active-badge");
+
+  const active=[...downloads.values()]
+    .filter(x=>!["finished","completed","error","failed"].includes(x.status))
+    .length;
+
+  if(active){
+    badge.textContent=active;
+    badge.style.display="inline-grid";
+  }else{
+    badge.style.display="none";
+  }
+}
+
+function clearFinishedDownloads(){
+  for(const [id,item] of downloads){
+    if(["finished","completed","error","failed"].includes(item.status)){
+      downloads.delete(id);
+    }
+  }
+
+  renderDownloads();
+  updateBadge();
+}
+
+async function loadSettings(){
+  try{
+    const response=await fetch(apiUrl("/api/config"));
+
+    if(!response.ok) return;
+
+    const cfg=await response.json();
+
+    document.getElementById("cfg-video-path").value=cfg.video_save_path||"";
+    document.getElementById("cfg-audio-path").value=cfg.audio_save_path||"";
+    document.getElementById("cfg-video-format").value=cfg.video_format||"bestvideo+bestaudio/best";
+    document.getElementById("cfg-video-container").value=cfg.video_container||"mp4";
+    document.getElementById("cfg-audio-format").value=cfg.audio_format||"mp3";
+    document.getElementById("cfg-audio-quality").value=cfg.audio_quality||"192";
+    document.getElementById("cfg-max-results").value=cfg.max_results||10;
+    document.getElementById("cfg-parallel-downloads").value=cfg.parallel_downloads||2;
+
+  }catch(err){
+    console.error("Settings load failed:",err);
+  }
+}
+
+async function saveSettings(){
+  const alert=document.getElementById("settings-alert");
+
+  const config={
+    video_save_path:document.getElementById("cfg-video-path").value,
+    audio_save_path:document.getElementById("cfg-audio-path").value,
+    video_format:document.getElementById("cfg-video-format").value,
+    video_container:document.getElementById("cfg-video-container").value,
+    audio_format:document.getElementById("cfg-audio-format").value,
+    audio_quality:document.getElementById("cfg-audio-quality").value,
+    max_results:Number(document.getElementById("cfg-max-results").value),
+    parallel_downloads:Number(document.getElementById("cfg-parallel-downloads").value)
+  };
+
+  try{
+    const response=await fetch(apiUrl("/api/config"),{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(config)
+    });
+
+    const data=await response.json();
+
+    if(!response.ok){
+      throw new Error(data.detail||"Could not save settings.");
+    }
+
+    alert.className="alert alert-success";
+    alert.textContent="Settings saved successfully.";
+    alert.style.display="block";
+
+    toast("Settings saved.");
+
+    setTimeout(()=>{
+      alert.style.display="none";
+    },3000);
+
+  }catch(err){
+    alert.className="alert alert-error";
+    alert.textContent=err.message||"Could not save settings.";
+    alert.style.display="block";
+  }
+}
+
+loadSettings();
+updateBadge();
+</script>
+
+</body>
+</html>
    
